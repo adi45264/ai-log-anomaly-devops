@@ -1,0 +1,33 @@
+# Phase 2 — CODE: Structure & Endpoint Reference
+
+app/
+├── __init__.py
+├── main.py            # FastAPI app + failure simulation
+├── logger.py          # structured JSON logging to stdout
+├── requirements.txt
+└── tests/
+    ├── __init__.py
+    ├── conftest.py    # TestClient fixture + sleep speedup
+    ├── test_health.py
+    ├── test_orders.py
+    ├── test_payment.py
+    ├── test_users.py
+    └── test_failure.py
+
+## Endpoints
+| Method | Path | Status | Notes |
+|--------|------|--------|-------|
+| GET | /api/health | 200 | health check |
+| POST | /api/orders | 201 | create order |
+| GET | /api/orders | 200 | list orders |
+| POST | /api/payment | 200/500 | 500 with database_timeout during failure simulation |
+| GET | /api/users | 200 | list users |
+| POST | /api/failure/{kind} | 200/404 | kinds: database, payment, latency |
+| POST | /api/failure/stop | 200 | stop simulation |
+
+## Run locally
+pip install -r app/requirements.txt
+uvicorn app.main:app --reload   # http://localhost:8000
+
+## Run tests
+pytest -v
