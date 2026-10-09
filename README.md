@@ -96,3 +96,32 @@ To view the results of the automated CI runs:
 1. Navigate to this repository on GitHub.
 2. Click on the **Actions** tab at the top.
 3. Select the **CI Pipeline** workflow from the left sidebar to view the history and logs of all workflow runs.
+
+## Phase 3: Centralized Logging (Loki & Grafana)
+
+The application has been extended with a centralized logging stack using **Grafana Loki** (log storage) and **Grafana Alloy** (log collector) and **Grafana** (visualization).
+
+### Startup Instructions
+The entire stack (API, Loki, Alloy, Grafana) runs together via Docker Compose:
+
+```bash
+docker-compose up -d
+```
+
+### Local URLs
+*   **FastAPI Application:** `http://localhost:8000`
+*   **Grafana Dashboard:** `http://localhost:3000` (Anonymous login enabled, no credentials needed)
+*   **Loki API:** `http://localhost:3100`
+
+### How to View Application Logs in Grafana
+1. Open **Grafana** at `http://localhost:3000`.
+2. Navigate to **Explore** (compass icon on the left menu).
+3. Select **Loki** from the datasource dropdown at the top left.
+4. In the Label browser or Query field, enter `{service="api"}` and click **Run Query**.
+5. You will see the structured JSON logs emitted by the FastAPI application.
+6. You can expand log lines to see the parsed JSON fields (like `latency_ms`, `event`, etc.).
+
+### Troubleshooting
+*   **No logs appearing in Grafana?** Ensure that your Docker daemon permits mounting `/var/run/docker.sock` to the Alloy container so it can discover and collect container logs. This is mapped in `docker-compose.yml`.
+*   **Container Restarting:** You can check individual service logs using standard Docker commands: `docker-compose logs alloy` or `docker-compose logs loki` to identify specific errors.
+*   **Security Note:** Grafana is configured with anonymous admin access for convenience during local development. Do not expose this configuration to the public internet or use it in production environments.
