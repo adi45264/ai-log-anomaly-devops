@@ -20,7 +20,13 @@ import time
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from app.logger import get_logger, monotonic_ms, new_request_id, request_id_var, setup_logging
+from app.logger import (
+    get_logger,
+    monotonic_ms,
+    new_request_id,
+    request_id_var,
+    setup_logging,
+)
 
 setup_logging()
 logger = get_logger("app")
