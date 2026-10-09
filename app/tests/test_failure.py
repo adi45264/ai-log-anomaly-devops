@@ -14,6 +14,7 @@ def test_unknown_failure_kind_returns_404(client):
 
 def test_payment_failure_generates_structured_error_log(client, caplog):
     import logging
+
     from app.logger import JsonFormatter
 
     client.post("/api/failure/database")

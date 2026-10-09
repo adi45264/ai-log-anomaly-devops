@@ -1,0 +1,15 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+ai-log-anomaly-devops/
+docs/
+scripts/
+requirements.md
+
