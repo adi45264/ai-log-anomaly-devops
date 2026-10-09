@@ -22,7 +22,7 @@ import sys
 import time
 import uuid
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
 
@@ -39,7 +39,7 @@ class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload = {
             "timestamp": datetime.fromtimestamp(
-                record.created, tz=timezone.utc
+                record.created, tz=UTC
             ).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
             "service": SERVICE_NAME,
             "level": record.levelname,
