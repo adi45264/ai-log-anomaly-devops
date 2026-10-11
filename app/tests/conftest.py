@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.anomaly_detector import detector
 from app.main import app, failure_state, orders
 
 
@@ -8,6 +9,7 @@ from app.main import app, failure_state, orders
 def client():
     failure_state.update(active=False, kind=None, started_at=None)
     orders.clear()
+    detector.clear()
     with TestClient(app) as c:
         yield c
 

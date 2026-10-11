@@ -8,6 +8,7 @@ Endpoints:
     GET  /api/users           -> 200 list users
     POST /api/failure/{kind}  -> 500 simulate a failure (database|payment|latency)
     POST /api/failure/stop    -> 200 stop failure simulation
+    GET  /api/anomalies       -> 200 detected anomalies from in-memory observations
 
 Every request emits structured JSON logs to stdout (event, status_code,
 latency_ms, request_id) so downstream log aggregation and the AI analyzer
@@ -20,6 +21,7 @@ import time
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from app.anomaly_detector import Observation, detector
 from app.logger import (
     get_logger,
     monotonic_ms,
@@ -70,7 +72,40 @@ async def logging_middleware(request: Request, call_next):
                 "latency_ms": latency_ms,
             },
         )
+        # Record observation for anomaly detection (no PII — path only, no body).
+        detector.record(
+            Observation(
+                timestamp=time.time(),
+                method=request.method,
+                path=request.url.path,
+                status_code=status_code,
+                latency_ms=float(latency_ms),
+            )
+        )
         request_id_var.reset(token)
+
+
+@app.get("/api/anomalies")
+def get_anomalies():
+    """Return detected anomalies from the in-memory observation buffer.
+
+    The response includes:
+    * ``anomalies`` – list of detected anomaly objects (may be empty for healthy traffic).
+    * ``observation_count`` – total observations currently buffered.
+    * ``window_size`` – the error-spike window used for detection.
+    * ``has_sufficient_baseline`` – whether Z-score detection is active.
+    * ``thresholds`` – all configured detection thresholds.
+    """
+    result = detector.detect()
+    logger.info(
+        "anomalies queried",
+        extra={
+            "event": "anomalies_queried",
+            "anomaly_count": len(result["anomalies"]),
+            "observation_count": result["observation_count"],
+        },
+    )
+    return result
 
 
 @app.get("/api/health")
