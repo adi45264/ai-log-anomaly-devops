@@ -1,4 +1,4 @@
-# AI-Powered Log Analysis DevOps
+﻿# AI-Powered Log Analysis DevOps
 
 This repository contains the FastAPI application for AI-Powered Log Analysis, Anomaly Detection and Automated Incident Summarization for Cloud-Native Applications.
 
@@ -125,3 +125,113 @@ docker-compose up -d
 *   **No logs appearing in Grafana?** Ensure that your Docker daemon permits mounting `/var/run/docker.sock` to the Alloy container so it can discover and collect container logs. This is mapped in `docker-compose.yml`.
 *   **Container Restarting:** You can check individual service logs using standard Docker commands: `docker-compose logs alloy` or `docker-compose logs loki` to identify specific errors.
 *   **Security Note:** Grafana is configured with anonymous admin access for convenience during local development. Do not expose this configuration to the public internet or use it in production environments.
+
+## Phase 4: Anomaly Detection
+
+The application now includes an in-process anomaly detector that continuously
+analyses the stream of incoming HTTP requests and exposes its findings via a
+dedicated API endpoint.
+
+### How It Works
+
+All HTTP observations (recorded by the existing middleware) are appended to a
+**bounded in-memory deque** (`AnomalyDetector._buffer`, default capacity
+**1 000** entries). When the buffer is full the oldest entry is evicted
+automatically ΓÇö memory usage is therefore capped regardless of traffic volume.
+
+Each call to `GET /api/anomalies` runs three independent, fully deterministic
+detection rules:
+
+| Rule | Trigger | Severity |
+|---|---|---|
+| `error_spike` | ΓëÑ N HTTP 5xx responses in the last W observations | `medium` (< 50 % error rate) / `high` (ΓëÑ 50 %) |
+| `high_latency` | Any single request exceeds L ms | `medium` (< 2├ù threshold) / `high` (ΓëÑ 2├ù threshold) |
+| `latency_zscore` | A request's latency is > Z standard deviations above the buffer mean (only when baseline ΓëÑ M observations and std > 0) | `medium` (z < 1.5├ù threshold) / `high` (z ΓëÑ 1.5├ù threshold) |
+
+No external APIs, no ML libraries, and no randomness are used.
+
+### Configurable Thresholds
+
+All thresholds are constructor parameters of `AnomalyDetector`
+(`app/anomaly_detector.py`). The module-level singleton uses these defaults:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `buffer_size` | `1000` | Maximum observations retained in memory |
+| `error_spike_window` | `50` | Recent observations examined for 5xx spikes |
+| `error_spike_threshold` | `5` | Minimum 5xx count to trigger a spike alert |
+| `latency_threshold_ms` | `2000` | Per-request latency (ms) above which a slow alert fires |
+| `zscore_threshold` | `3.0` | Z-score above which a latency observation is flagged as an outlier |
+| `min_baseline_size` | `30` | Minimum buffer size before z-score analysis is activated |
+
+### Endpoint: `GET /api/anomalies`
+
+Returns a JSON object describing currently detected anomalies and supporting
+metadata.
+
+**Example response (anomaly detected):**
+```json
+{
+  "anomalies": [
+    {
+      "anomaly_type": "error_spike",
+      "severity": "high",
+      "description": "8 HTTP 5xx responses detected in the last 50 observations (16.0% error rate).",
+      "detected_at": "2026-10-11T16:05:00.123Z",
+      "metrics": {
+        "error_count": 8,
+        "window_size": 50,
+        "error_rate": 0.16,
+        "threshold": 5,
+        "window_start": "2026-10-11T16:04:55.000Z",
+        "window_end": "2026-10-11T16:05:00.000Z"
+      }
+    }
+  ],
+  "observation_count": 50,
+  "window_size": 50,
+  "has_sufficient_baseline": true,
+  "thresholds": {
+    "error_spike_threshold": 5,
+    "error_spike_window": 50,
+    "latency_threshold_ms": 2000.0,
+    "zscore_threshold": 3.0,
+    "min_baseline_size": 30
+  }
+}
+```
+
+**Example response (healthy traffic):**
+```json
+{
+  "anomalies": [],
+  "observation_count": 12,
+  "window_size": 50,
+  "has_sufficient_baseline": false,
+  "thresholds": { "..." : "..." }
+}
+```
+
+**Curl example:**
+```bash
+curl http://localhost:8000/api/anomalies | python3 -m json.tool
+```
+
+### Limitations of In-Memory Observations
+
+* **Restarts reset history** ΓÇö the buffer is process-local. A container
+  restart or rolling deployment discards all observations. Alerts will not
+  fire until the buffer is repopulated.
+* **Single-process only** ΓÇö the in-memory buffer is not shared across
+  multiple application replicas. Each replica detects anomalies
+  independently.
+* **No persistence** ΓÇö observations are not written to Loki or any other
+  store. Use the Loki/Grafana stack (Phase 3) for durable log querying and
+  alerting across restarts.
+* **Z-score warm-up** ΓÇö z-score detection requires at least
+  `min_baseline_size` (default 30) observations before it activates. On
+  a fresh start, only the `error_spike` and `high_latency` rules fire.
+* **Single-spike vs. sustained spike** ΓÇö one isolated HTTP 500 will not
+  trigger an `error_spike` alert. The count must reach
+  `error_spike_threshold` (default 5) within the most recent
+  `error_spike_window` (default 50) observations.
