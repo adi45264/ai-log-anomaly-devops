@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SwiftCart — Order Anything</title>
+<style>
+  :root {
+    --paper: #faf8f2; --card: #ffffff; --ink: #1c1917; --muted: #78716c;
+    --line: #e8e2d4; --accent: #0e6b4d; --accent-deep: #0a523c;
+    --amber: #b54708; --amber-bg: #fffaeb; --red: #b42318; --red-bg: #fef3f2;
+    --green-bg: #ecfdf3; --shadow: 0 1px 2px rgba(28,25,23,.06), 0 8px 24px -12px rgba(28,25,23,.18);
+    --radius: 14px;
+  }
+  [data-theme="dark"] {
+    --paper: #151310; --card: #201c17; --ink: #f0e9db; --muted: #a8a29e;
+    --line: #35302a; --accent: #34c08a; --accent-deep: #25a174;
+    --amber-bg: #2a1f0d; --red-bg: #2c1410; --green-bg: #0d281e;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .display { font-family: Georgia, "Times New Roman", serif; }
+  header.top { position: sticky; top: 0; z-index: 30; background: var(--card); border-bottom: 1px solid var(--line); }
+  .bar { max-width: 1180px; margin: 0 auto; padding: 0.7rem 1rem; display: flex; align-items: center; gap: 0.8rem; }
+  .logo { font-family: Georgia, serif; font-weight: 700; font-size: 1.4rem; }
+  .logo em { color: var(--accent); font-style: normal; }
+  .search { flex: 1; display: flex; }
+  .search input { width: 100%; padding: 0.55rem 0.9rem; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); color: var(--ink); font-size: 0.92rem; }
+  nav.tabs { display: flex; gap: 0.25rem; }
+  nav.tabs button { background: none; border: none; color: var(--muted); font-size: 0.92rem; font-weight: 600; padding: 0.55rem 0.85rem; border-radius: 999px; cursor: pointer; }
+  nav.tabs button.active { background: var(--ink); color: var(--paper); }
+  .iconbtn { position: relative; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 0.5rem 0.9rem; cursor: pointer; font-weight: 700; }
+  .iconbtn .count { position: absolute; top: -7px; right: -7px; background: var(--accent); color: #fff; font-size: 0.72rem; min-width: 20px; height: 20px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-weight: 800; }
+  .pill { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; border: 1px solid var(--line); border-radius: 999px; padding: 0.3rem 0.7rem; color: var(--muted); background: var(--card); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #999; }
+  .dot.up { background: #12b76a; box-shadow: 0 0 6px #12b76a; }
+  main { max-width: 1180px; margin: 0 auto; padding: 1.25rem 1rem 4rem; }
+  .hero { border: 1px solid var(--line); border-radius: 18px; padding: 2rem 1.75rem; background: var(--card); box-shadow: var(--shadow); display: flex; gap: 1.5rem; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 1.25rem; }
+  .hero h1 { font-size: 2rem; margin: 0 0 0.4rem; font-weight: 700; }
+  .hero p { margin: 0; color: var(--muted); }
+  .hero .cta { display: flex; gap: 0.6rem; }
+  .btn { padding: 0.6rem 1.2rem; border-radius: 999px; border: none; background: var(--accent); color: #fff; font-weight: 700; cursor: pointer; font-size: 0.92rem; }
+  .btn:hover { background: var(--accent-deep); }
+  .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  .btn.danger { background: var(--red); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .toolbar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 1rem 0; }
+  .chip { border: 1px solid var(--line); background: var(--card); color: var(--muted); border-radius: 999px; padding: 0.4rem 0.9rem; cursor: pointer; font-size: 0.85rem; font-weight: 600; }
+  .chip.active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  select, input[type="text"], input[type="number"], input[type="email"] { padding: 0.55rem 0.7rem; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font-size: 0.9rem; }
+  .grid-products { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1rem; }
+  .product { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; }
+  .product .art { font-size: 3rem; text-align: center; padding: 1.4rem 0 0.6rem; background: var(--paper); }
+  .product .body { padding: 0.9rem 1rem 1.1rem; display: flex; flex-direction: column; gap: 0.35rem; flex: 1; }
+  .product .cat { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .product .name { font-weight: 700; font-size: 1.02rem; }
+  .product .meta { font-size: 0.82rem; color: var(--muted); }
+  .product .price { font-family: Georgia, serif; font-size: 1.35rem; font-weight: 700; }
+  .product .buyrow { display: flex; gap: 0.5rem; align-items: center; margin-top: auto; padding-top: 0.5rem; }
+  .stepper { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; }
+  .stepper button { background: none; border: none; color: var(--ink); font-size: 1rem; padding: 0.3rem 0.7rem; cursor: pointer; }
+  .badge { display: inline-block; padding: 0.12rem 0.6rem; border-radius: 999px; font-size: 0.76rem; font-weight: 700; }
+  .b-green { background: var(--green-bg); color: var(--accent-deep); }
+  [data-theme="dark"] .b-green { color: #6ce9a6; }
+  .b-red { background: var(--red-bg); color: var(--red); }
+  .b-amber { background: var(--amber-bg); color: var(--amber); }
+  .b-blue { background: #e8f1fd; color: #175cd3; }
+  [data-theme="dark"] .b-blue { background: #16283f; color: #84adff; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { padding: 0.6rem 0.7rem; border-bottom: 1px solid var(--line); text-align: left; }
+  th { color: var(--muted); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; }
+  tr.clickable { cursor: pointer; } tr.clickable:hover td { background: var(--paper); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.25rem; margin-bottom: 1rem; }
+  .card h2 { margin: 0 0 0.2rem; font-size: 1.1rem; }
+  .card p.sub { margin: 0 0 1rem; color: var(--muted); font-size: 0.86rem; }
+  .drawer { position: fixed; top: 0; right: -420px; width: min(400px, 94vw); height: 100vh; background: var(--card); border-left: 1px solid var(--line); box-shadow: -16px 0 40px rgba(0,0,0,.18); transition: right 0.25s ease; z-index: 60; display: flex; flex-direction: column; }
+  .drawer.open { right: 0; }
+  .drawer .dhead { padding: 1rem 1.25rem; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }
+  .drawer .dbody { padding: 1rem 1.25rem; overflow-y: auto; flex: 1; }
+  .drawer .dfoot { padding: 1rem 1.25rem; border-top: 1px solid var(--line); }
+  .line { display: flex; justify-content: space-between; align-items: center; padding: 0.55rem 0; border-bottom: 1px dashed var(--line); }
+  .shipbar { height: 8px; background: var(--paper); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin: 0.5rem 0; }
+  .shipbar > div { height: 100%; background: var(--accent); width: 0; transition: width 0.3s; }
+  .modal-bg { position: fixed; inset: 0; background: rgba(16,24,40,.55); display: none; align-items: center; justify-content: center; z-index: 70; padding: 1rem; }
+  .modal-bg.open { display: flex; }
+  .modal { background: var(--card); border-radius: 18px; max-width: 560px; width: 100%; max-height: 92vh; overflow-y: auto; padding: 1.5rem; }
+  .steps { display: flex; gap: 0.4rem; margin-bottom: 1.2rem; }
+  .steps div { flex: 1; height: 5px; border-radius: 999px; background: var(--line); }
+  .steps div.on { background: var(--accent); }
+  .field { margin-bottom: 0.8rem; }
+  .field label { display: block; font-size: 0.8rem; font-weight: 700; margin-bottom: 0.25rem; }
+  .field input { width: 100%; }
+  .timeline { list-style: none; margin: 0.5rem 0; padding: 0; }
+  .timeline li { position: relative; padding: 0 0 0.9rem 1.6rem; font-size: 0.9rem; }
+  .timeline li::before { content: ""; position: absolute; left: 5px; top: 5px; width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+  .timeline li.done::before { background: var(--accent); }
+  .timeline li::after { content: ""; position: absolute; left: 9px; top: 18px; bottom: 0; width: 1px; background: var(--line); }
+  .timeline li:last-child::after { display: none; }
+  .timeline small { color: var(--muted); display: block; }
+  #toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: 1.2rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 100; align-items: center; }
+  .toast { background: var(--ink); color: var(--paper); padding: 0.7rem 1.2rem; border-radius: 999px; font-size: 0.88rem; box-shadow: var(--shadow); animation: up 0.25s ease-out; }
+  .toast.err { background: var(--red); color: #fff; }
+  @keyframes up { from { transform: translateY(10px); opacity: 0; } }
+  .empty { text-align: center; color: var(--muted); padding: 2.5rem 1rem; }
+  .console { background: #101828; color: #d0d5dd; border-radius: 10px; padding: 0.8rem 1rem; font-family: Consolas, monospace; font-size: 0.78rem; max-height: 200px; overflow-y: auto; white-space: pre-wrap; }
+  details.diag summary { cursor: pointer; color: var(--muted); font-size: 0.86rem; }
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 2rem 1rem; }
+  .view { display: none; } .view.active { display: block; }
+  @media (max-width: 700px) { .search { display: none; } .hero h1 { font-size: 1.5rem; } }
+  button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="bar">
+    <div class="logo">Swift<em>Cart</em></div>
+    <div class="search"><input id="q" type="text" placeholder="Search products…" oninput="renderCatalog()"></div>
+    <nav class="tabs" role="tablist">
+      <button data-view="shop" class="active" onclick="go('shop')">Shop</button>
+      <button data-view="orders" onclick="go('orders')">Orders</button>
+      <button data-view="customers" onclick="go('customers')">Customers</button>
+    </nav>
+    <button class="iconbtn" onclick="toggleTheme()" title="Toggle dark mode">◐</button>
+    <button class="iconbtn" onclick="toggleCart(true)">🛒 Cart <span class="count" id="cartCount">0</span></button>
+    <span class="pill"><span class="dot" id="dot"></span><span id="healthTxt">…</span></span>
+  </div>
+</header>
+
+<main>
+  <!-- SHOP -->
+  <section id="view-shop" class="view active">
+    <div class="hero">
+      <div>
+        <h1 class="display">Everything you need, delivered.</h1>
+        <p>Live storefront wired to the SwiftCart orders API — every click is a real request.</p>
+      </div>
+      <div class="cta"><button class="btn" onclick="go('orders')">Track my orders</button></div>
+    </div>
+    <div class="toolbar" id="cats"></div>
+    <div class="toolbar">
+      <select id="sort" onchange="renderCatalog()">
+        <option value="feat">Sort: Featured</option>
+        <option value="lo">Price: Low to High</option>
+        <option value="hi">Price: High to Low</option>
+        <option value="rate">Top rated</option>
+      </select>
+      <span style="color:var(--muted);font-size:0.85rem" id="count"></span>
+    </div>
+    <div class="grid-products" id="products"></div>
+  </section>
+
+  <!-- ORDERS -->
+  <section id="view-orders" class="view">
+    <div class="card">
+      <h2>Order history</h2>
+      <p class="sub">Click a row for tracking detail. Unpaid orders can be cancelled.</p>
+      <div class="toolbar"><button class="btn ghost" onclick="loadOrders()">↻ Refresh</button></div>
+      <div id="ordersWrap"></div>
+    </div>
+  </section>
+
+  <!-- CUSTOMERS -->
+  <section id="view-customers" class="view">
+    <div class="card">
+      <h2>Customers</h2>
+      <p class="sub">Registered accounts on the platform.</p>
+      <div class="toolbar"><button class="btn ghost" onclick="loadUsers()">↻ Refresh</button></div>
+      <div id="usersWrap"></div>
+    </div>
+  </section>
+
+  <details class="diag">
+    <summary>Test controls — outage simulation (for resilience demos)</summary>
+    <div class="card" style="margin-top:0.6rem">
+      <div class="toolbar">
+        <button class="btn danger" onclick="outage('database')">Database outage</button>
+        <button class="btn danger" onclick="outage('payment')">Payment outage</button>
+        <button class="btn ghost" onclick="outage('latency')">Latency spike</button>
+        <button class="btn ghost" onclick="recover()">Recover</button>
+        <span id="outageBadge"></span>
+      </div>
+      <div class="console" id="console">ready.</div>
+    </div>
+  </details>
+</main>
+
+<!-- CART DRAWER -->
+<aside class="drawer" id="cartDrawer" aria-label="Shopping cart">
+  <div class="dhead"><strong>Your cart</strong><button class="btn ghost" onclick="toggleCart(false)">✕</button></div>
+  <div class="dbody" id="cartBody"></div>
+  <div class="dfoot">
+    <div style="font-size:0.85rem;color:var(--muted)" id="shipMsg"></div>
+    <div class="shipbar"><div id="shipFill"></div></div>
+    <div class="line"><strong>Total</strong><strong id="cartTotal">₹0</strong></div>
+    <button class="btn" style="width:100%;margin-top:0.6rem" id="checkoutBtn" onclick="startCheckout()">Checkout →</button>
+  </div>
+</aside>
+
+<!-- ORDER DETAIL DRAWER -->
+<aside class="drawer" id="orderDrawer" aria-label="Order detail">
+  <div class="dhead"><strong id="odTitle">Order</strong><button class="btn ghost" onclick="toggleOrderDrawer(false)">✕</button></div>
+  <div class="dbody" id="orderBody"></div>
+</aside>
+
+<!-- CHECKOUT MODAL -->
+<div class="modal-bg" id="checkoutModal">
+  <div class="modal">
+    <div class="steps"><div id="s1"></div><div id="s2"></div><div id="s3"></div></div>
+    <div id="coBody"></div>
+  </div>
+</div>
+
+<footer>SwiftCart Store Console · demo storefront for resilience testing · <a href="/docs" style="color:var(--muted)">API docs</a></footer>
+<div id="toasts"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const CATALOG = [
+  { emoji: '💻', name: 'Laptop Pro 14', price: 1200, cat: 'Computing', rating: 4.8, stock: 12 },
+  { emoji: '🖥️', name: '27" 4K Monitor', price: 349, cat: 'Computing', rating: 4.6, stock: 8 },
+  { emoji: '⌨️', name: 'Mechanical Keyboard', price: 89, cat: 'Accessories', rating: 4.7, stock: 30 },
+  { emoji: '🖱️', name: 'Wireless Mouse', price: 49, cat: 'Accessories', rating: 4.5, stock: 42 },
+  { emoji: '🎧', name: 'Noise-Cancel Headphones', price: 199, cat: 'Audio', rating: 4.9, stock: 15 },
+  { emoji: '🔊', name: 'Smart Speaker', price: 129, cat: 'Audio', rating: 4.4, stock: 20 },
+  { emoji: '📷', name: 'HD Webcam', price: 129, cat: 'Accessories', rating: 4.3, stock: 0 },
+  { emoji: '🔌', name: '65W GaN Charger', price: 59, cat: 'Accessories', rating: 4.6, stock: 55 },
+];
+const CATS = ['All', 'Computing', 'Audio', 'Accessories'];
+const FREE_SHIP = 150;
+let activeCat = 'All';
+let cart = {};   // name -> qty
+let revenue = 0;
+let coPayload = null;
+
+function toast(msg, err=false) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (err ? ' err' : '');
+  t.textContent = msg;
+  $('toasts').appendChild(t);
+  setTimeout(() => t.remove(), 3600);
+}
+function log(m) {
+  const c = $('console');
+  c.textContent += '\n' + new Date().toLocaleTimeString() + '  ' + m;
+  c.scrollTop = c.scrollHeight;
+}
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  return { http: r.status, body: await r.json().catch(() => ({})) };
+}
+function money(n) { return '₹' + Number(n).toLocaleString('en-IN'); }
+
+/* ---------- theme / nav ---------- */
+function toggleTheme() {
+  const d = document.documentElement;
+  d.dataset.theme = d.dataset.theme === 'dark' ? '' : 'dark';
+}
+function go(view) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  $('view-' + view).classList.add('active');
+  document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  if (view === 'orders') loadOrders();
+  if (view === 'customers') loadUsers();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/* ---------- health ---------- */
+async function refreshHealth() {
+  try {
+    const { http, body } = await api('/api/health');
+    const up = http === 200;
+    $('dot').className = 'dot' + (up ? ' up' : '');
+    $('healthTxt').textContent = up ? `Operational · v${body.version}` : 'Unreachable';
+  } catch { $('healthTxt').textContent = 'Unreachable'; }
+}
+
+/* ---------- catalog ---------- */
+function renderCats() {
+  $('cats').innerHTML = CATS.map(c =>
+    `<button class="chip${c === activeCat ? ' active' : ''}" onclick="setCat('${c}')">${c}</button>`).join('');
+}
+function setCat(c) { activeCat = c; renderCats(); renderCatalog(); }
+function renderCatalog() {
+  const q = ($('q').value || '').toLowerCase();
+  let items = CATALOG.filter(p => (activeCat === 'All' || p.cat === activeCat) && p.name.toLowerCase().includes(q));
+  const s = $('sort').value;
+  if (s === 'lo') items = [...items].sort((a, b) => a.price - b.price);
+  if (s === 'hi') items = [...items].sort((a, b) => b.price - a.price);
+  if (s === 'rate') items = [...items].sort((a, b) => b.rating - a.rating);
+  $('count').textContent = `${items.length} product${items.length === 1 ? '' : 's'}`;
+  $('products').innerHTML = items.length ? items.map((p) => {
+    const i = CATALOG.indexOf(p);
+    const qty = cart[p.name] || 0;
+    return `<div class="product"><div class="art">${p.emoji}</div><div class="body">
+      <div class="cat">${p.cat}</div><div class="name">${p.name}</div>
+      <div class="meta">★ ${p.rating} · ${p.stock > 0 ? p.stock + ' in stock' : '<b style="color:var(--red)">out of stock</b>'}</div>
+      <div class="price">${money(p.price)}</div>
+      <div class="buyrow">
+        ${p.stock > 0 ? `<div class="stepper"><button onclick="dec(${i})">−</button><span style="padding:0 0.5rem">${qty}</span><button onclick="add(${i})">+</button></div>
+        <button class="btn ghost" onclick="add(${i});toggleCart(true)">Add</button>` : `<span class="badge b-amber">notify me</span>`}
+      </div></div></div>`;
+  }).join('') : `<div class="empty">No products match “${$('q').value}”. Try another search.</div>`;
+}
+function add(i) { const p = CATALOG[i]; cart[p.name] = (cart[p.name] || 0) + 1; renderCatalog(); renderCart(); }
+function dec(i) {
+  const p = CATALOG[i];
+  cart[p.name] = (cart[p.name] || 0) - 1;
+  if (cart[p.name] <= 0) delete cart[p.name];
+  renderCatalog(); renderCart();
+}
+function priceOf(name) { return CATALOG.find(p => p.name === name).price; }
+function cartCount() { return Object.values(cart).reduce((a, b) => a + b, 0); }
+function cartTotal() { return Object.entries(cart).reduce((a, [n, q]) => a + priceOf(n) * q, 0); }
+
+/* ---------- cart ---------- */
+function toggleCart(open) { $('cartDrawer').classList.toggle('open', open); }
+function renderCart() {
+  $('cartCount').textContent = cartCount();
+  const entries = Object.entries(cart);
+  $('cartBody').innerHTML = entries.length ? entries.map(([n, q]) =>
+    `<div class="line"><div><strong>${n}</strong><br><small style="color:var(--muted)">${money(priceOf(n))} each</small></div>
+     <div style="display:flex;gap:0.4rem;align-items:center">
+       <div class="stepper"><button onclick="cartQty('${n}',-1)">−</button><span style="padding:0 0.5rem">${q}</span><button onclick="cartQty('${n}',1)">+</button></div>
+     </div></div>`).join('')
+    : `<div class="empty">Your cart is empty.<br>Browse the catalog to add items.</div>`;
+  const t = cartTotal();
+  $('cartTotal').textContent = money(t);
+  $('shipFill').style.width = Math.min(100, (t / FREE_SHIP) * 100) + '%';
+  $('shipMsg').textContent = t >= FREE_SHIP ? ' You unlocked FREE shipping' : `Add ${money(FREE_SHIP - t)} more for free shipping`;
+  $('checkoutBtn').disabled = !entries.length;
+}
+function cartQty(name, d) {
+  cart[name] = (cart[name] || 0) + d;
+  if (cart[name] <= 0) delete cart[name];
+  renderCatalog(); renderCart();
+}
+
+/* ---------- checkout ---------- */
+function startCheckout() {
+  if (!cartCount()) return;
+  toggleCart(false);
+  coPayload = { name: '', email: '' };
+  coStep(1);
+  $('checkoutModal').classList.add('open');
+}
+function closeCheckout() { $('checkoutModal').classList.remove('open'); }
+function coStep(n) {
+  ['s1', 's2', 's3'].forEach((id, i) => $(id).className = i < n ? 'on' : '');
+  const entries = Object.entries(cart);
+  const t = cartTotal();
+  if (n === 1) {
+    $('coBody').innerHTML = `<h2 class="display">Review your order</h2>
+      ${entries.map(([nm, q]) => `<div class="line"><span>${nm} × ${q}</span><span>${money(priceOf(nm) * q)}</span></div>`).join('')}
+      <div class="line"><strong>Total</strong><strong>${money(t)}</strong></div>
+      <div class="toolbar"><button class="btn ghost" onclick="closeCheckout()">Back</button><button class="btn" onclick="coStep(2)">Continue →</button></div>`;
+  } else if (n === 2) {
+    $('coBody').innerHTML = `<h2 class="display">Your details</h2>
+      <div class="field"><label>Full name</label><input id="coName" type="text" placeholder="Ada Lovelace" value="${coPayload.name}"></div>
+      <div class="field"><label>Email for receipt</label><input id="coEmail" type="email" placeholder="ada@example.com" value="${coPayload.email}"></div>
+      <div class="toolbar"><button class="btn ghost" onclick="coStep(1)">← Back</button><button class="btn" onclick="coSave()">Pay ${money(t)} →</button></div>`;
+  }
+}
+function coSave() {
+  coPayload = { name: $('coName').value.trim(), email: $('coEmail').value.trim() };
+  if (!coPayload.name || !/.+@.+\..+/.test(coPayload.email)) { toast('Enter a name and valid email', true); return; }
+  coPay();
+}
+async function coPay() {
+  $('coBody').innerHTML = `<h2 class="display">Processing payment…</h2><p style="color:var(--muted)">Contacting the payment gateway.</p>`;
+  // One API order per cart line, then one payment for the grand total.
+  let firstId = null;
+  for (const [nm, q] of Object.entries(cart)) {
+    const { http, body } = await api('/api/orders', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item: nm, quantity: q, amount: priceOf(nm) * q }) });
+    if (http !== 201) { return coFail('Order creation failed (HTTP ' + http + ').'); }
+    if (firstId === null) firstId = body.order_id;
+  }
+  const t = cartTotal();
+  const { http, body } = await api('/api/payment', { method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ order_id: firstId, amount: t }) });
+  if (http === 200 && body.status === 'approved') {
+    revenue += t;
+    cart = {}; renderCatalog(); renderCart(); loadOrders();
+    ['s1', 's2', 's3'].forEach(id => $(id).className = 'on');
+    $('coBody').innerHTML = `<h2 class="display">Order confirmed 🎉</h2>
+      <p>Thanks ${coPayload.name} — receipt sent to <b>${coPayload.email}</b>.</p>
+      <p>Reference <b>SWC-${String(firstId).padStart(5, '0')}</b> · paid ${money(t)} in ${body.latency_ms} ms.</p>
+      <div class="toolbar"><button class="btn ghost" onclick="closeCheckout()">Continue shopping</button><button class="btn" onclick="closeCheckout();go('orders');openOrder(${firstId})">Track order →</button></div>`;
+    toast(`Order #${firstId} paid`);
+    log(`checkout complete: order #${firstId}, ${money(t)}`);
+  } else {
+    return coFail(body.detail || ('Payment declined (HTTP ' + http + ').'));
+  }
+}
+function coFail(msg) {
+  $('coBody').innerHTML = `<h2 class="display">Payment failed</h2>
+    <p><span class="badge b-red">DECLINED</span></p><p>${msg}</p>
+    <p style="color:var(--muted);font-size:0.86rem">Tip: an active outage simulation declines payments. Recover under Test controls and retry — no money moved.</p>
+    <div class="toolbar"><button class="btn ghost" onclick="closeCheckout()">Close</button><button class="btn" onclick="coStep(1)">Try again</button></div>`;
+  toast('Payment failed', true);
+  log('checkout FAILED: ' + msg);
+}
+
+/* ---------- orders ---------- */
+function statusBadge(s) {
+  return s === 'paid' ? '<span class="badge b-green">PAID</span>' : '<span class="badge b-blue">PLACED</span>';
+}
+async function loadOrders() {
+  const { body } = await api('/api/orders');
+  const list = body.orders || [];
+  $('ordersWrap').innerHTML = list.length ? `<table><thead><tr><th>Order</th><th>Item</th><th>Qty</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>` +
+    list.map(o => `<tr class="clickable" onclick="openOrder(${o.order_id})"><td><strong>#${o.order_id}</strong><br><small style="color:var(--muted)">SWC-${String(o.order_id).padStart(5, '0')}</small></td><td>${o.item}</td><td>${o.quantity}</td><td>${money(o.amount)}</td><td>${statusBadge(o.status)}</td><td>→</td></tr>`).join('') + `</tbody></table>`
+    : `<div class="empty">No orders yet — <a href="#" onclick="go('shop');return false">start shopping</a>.</div>`;
+}
+async function openOrder(id) {
+  const { body } = await api('/api/orders');
+  const o = (body.orders || []).find(x => x.order_id === id);
+  if (!o) { toast('Order not found', true); return; }
+  $('odTitle').textContent = `Order #${o.order_id}`;
+  $('orderBody').innerHTML = `
+    <p><strong>${o.item}</strong> × ${o.quantity} — <strong>${money(o.amount)}</strong><br>
+    <small style="color:var(--muted)">Reference SWC-${String(o.order_id).padStart(5, '0')}</small></p>
+    <ul class="timeline">
+      <li class="done">Placed<small>order created via API</small></li>
+      ${o.status === 'paid' ? '<li class="done">Paid<small>payment approved</small></li>' : '<li>Awaiting payment<small>complete Checkout to pay</small></li>'}
+    </ul>
+    ${o.status === 'paid'
+      ? `<p><span class="badge b-green">PAID — fulfilment in progress</span></p>`
+      : `<div class="toolbar"><button class="btn danger" onclick="cancelOrder(${o.order_id})">Cancel order</button></div>`}`;
+  toggleOrderDrawer(true);
+}
+function toggleOrderDrawer(open) { $('orderDrawer').classList.toggle('open', open); }
+async function cancelOrder(id) {
+  const { http, body } = await api('/api/orders/' + id, { method: 'DELETE' });
+  if (http === 200) { toast(`Order #${id} cancelled`); log(`order #${id} cancelled`); toggleOrderDrawer(false); loadOrders(); }
+  else toast(body.detail || 'Cancel failed', true);
+}
+async function loadUsers() {
+  const { body } = await api('/api/users');
+  $('usersWrap').innerHTML = `<table><thead><tr><th>ID</th><th>Name</th><th>Email</th></tr></thead><tbody>` +
+    (body.users || []).map(u => `<tr><td>${u.id}</td><td><strong>${u.name}</strong></td><td>${u.email}</td></tr>`).join('') + `</tbody></table>`;
+}
+
+/* ---------- outage sim ---------- */
+async function outage(kind) {
+  await api('/api/failure/' + kind, { method: 'POST' });
+  $('outageBadge').innerHTML = `<span class="badge b-red">OUTAGE: ${kind}</span>`;
+  toast(`Simulating ${kind} outage`, true); log(`outage started: ${kind}`);
+}
+async function recover() {
+  await api('/api/failure/stop', { method: 'POST' });
+  $('outageBadge').innerHTML = `<span class="badge b-green">healthy</span>`;
+  toast('Recovered'); log('outage stopped');
+}
+
+/* ---------- init ---------- */
+renderCats(); renderCatalog(); renderCart(); loadOrders(); loadUsers(); refreshHealth();
+setInterval(refreshHealth, 10000);
+</script>
+</body>
+</html>

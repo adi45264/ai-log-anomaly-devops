@@ -1,0 +1,67 @@
+{
+  "title": "AI Log Anomaly DevOps",
+  "uid": "ai-log-anomaly",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Log volume by service",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service) (rate({service=~\"api|log-platform\"}[$__interval]))",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Demo-app error rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate({service=\"api\"} | json | level = \"ERROR\" [$__interval]))",
+          "legendFormat": "errors/sec"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Incidents created",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service=\"log-platform\"} | json | event = \"incident_created\" [$__range]))",
+          "legendFormat": "incidents"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Anomalies queried (latest count)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max_over_time({service=\"log-platform\"} | json | event = \"anomalies_queried\" | unwrap anomaly_count [$__range])",
+          "legendFormat": "anomalies"
+        }
+      ]
+    }
+  ]
+}

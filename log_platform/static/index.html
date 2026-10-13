@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Log Platform — Anomaly Console</title>
+<style>
+  :root {
+    --paper: #faf8f2; --card: #ffffff; --ink: #1c1917; --muted: #78716c;
+    --line: #e8e2d4; --accent: #0e6b4d; --accent-deep: #0a523c;
+    --amber: #b54708; --amber-bg: #fffaeb; --red: #b42318; --red-bg: #fef3f2;
+    --green-bg: #ecfdf3; --shadow: 0 1px 2px rgba(28,25,23,.06), 0 8px 24px -12px rgba(28,25,23,.18);
+    --radius: 14px;
+  }
+  [data-theme="dark"] {
+    --paper: #151310; --card: #201c17; --ink: #f0e9db; --muted: #a8a29e;
+    --line: #35302a; --accent: #34c08a; --accent-deep: #25a174;
+    --amber-bg: #2a1f0d; --red-bg: #2c1410; --green-bg: #0d281e;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .display { font-family: Georgia, "Times New Roman", serif; }
+  header.top { position: sticky; top: 0; z-index: 30; background: var(--card); border-bottom: 1px solid var(--line); }
+  .bar { max-width: 1180px; margin: 0 auto; padding: 0.7rem 1rem; display: flex; align-items: center; gap: 0.8rem; }
+  .logo { font-family: Georgia, serif; font-weight: 700; font-size: 1.35rem; }
+  .logo em { color: var(--accent); font-style: normal; }
+  nav.tabs { display: flex; gap: 0.25rem; margin-left: 0.5rem; }
+  nav.tabs button { background: none; border: none; color: var(--muted); font-size: 0.92rem; font-weight: 600; padding: 0.55rem 0.85rem; border-radius: 999px; cursor: pointer; }
+  nav.tabs button.active { background: var(--ink); color: var(--paper); }
+  .spacer { flex: 1; }
+  .iconbtn { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 0.5rem 0.9rem; cursor: pointer; font-weight: 700; }
+  .pill { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; border: 1px solid var(--line); border-radius: 999px; padding: 0.3rem 0.7rem; color: var(--muted); background: var(--card); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #999; }
+  .dot.up { background: #12b76a; box-shadow: 0 0 6px #12b76a; }
+  .dot.bad { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  main { max-width: 1180px; margin: 0 auto; padding: 1.25rem 1rem 4rem; }
+  .hero { border: 1px solid var(--line); border-radius: 18px; padding: 1.75rem; background: var(--card); box-shadow: var(--shadow); display: flex; gap: 1.5rem; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 1.25rem; }
+  .hero h1 { font-size: 1.9rem; margin: 0 0 0.4rem; }
+  .hero p { margin: 0; color: var(--muted); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; box-shadow: var(--shadow); }
+  .stat .v { font-size: 1.7rem; font-weight: 800; }
+  .stat .l { color: var(--muted); font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat.alert .v { color: var(--red); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.25rem; margin-bottom: 1rem; }
+  .card h2 { margin: 0 0 0.2rem; font-size: 1.1rem; }
+  .card p.sub { margin: 0 0 1rem; color: var(--muted); font-size: 0.86rem; }
+  .btn { padding: 0.6rem 1.2rem; border-radius: 999px; border: none; background: var(--accent); color: #fff; font-weight: 700; cursor: pointer; font-size: 0.9rem; }
+  .btn:hover { background: var(--accent-deep); }
+  .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  .btn.warn { background: var(--amber); }
+  .btn.danger { background: var(--red); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .toolbar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.8rem 0; }
+  input, select { padding: 0.55rem 0.7rem; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font-size: 0.9rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  th, td { padding: 0.55rem 0.65rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; }
+  .badge { display: inline-block; padding: 0.12rem 0.6rem; border-radius: 999px; font-size: 0.76rem; font-weight: 700; white-space: nowrap; }
+  .b-green { background: var(--green-bg); color: var(--accent-deep); }
+  [data-theme="dark"] .b-green { color: #6ce9a6; }
+  .b-red { background: var(--red-bg); color: var(--red); }
+  .b-amber { background: var(--amber-bg); color: var(--amber); }
+  .b-blue { background: #e8f1fd; color: #175cd3; }
+  [data-theme="dark"] .b-blue { background: #16283f; color: #84adff; }
+  .incident { border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; margin-bottom: 0.8rem; background: var(--card); }
+  .incident.open { border-color: var(--red); }
+  .incident h3 { margin: 0 0 0.3rem; font-size: 1rem; }
+  .incident .sum { color: var(--muted); font-size: 0.88rem; margin-bottom: 0.5rem; }
+  .incident pre { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem; font-size: 0.78rem; overflow-x: auto; display: none; }
+  .incident.show pre { display: block; }
+  .empty { text-align: center; color: var(--muted); padding: 2rem 1rem; }
+  .view { display: none; } .view.active { display: block; }
+  #toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: 1.2rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 100; align-items: center; }
+  .toast { background: var(--ink); color: var(--paper); padding: 0.7rem 1.2rem; border-radius: 999px; font-size: 0.88rem; box-shadow: var(--shadow); animation: up 0.25s ease-out; }
+  .toast.err { background: var(--red); color: #fff; }
+  @keyframes up { from { transform: translateY(10px); opacity: 0; } }
+  .console { background: #101828; color: #d0d5dd; border-radius: 10px; padding: 0.8rem 1rem; font-family: Consolas, monospace; font-size: 0.78rem; max-height: 190px; overflow-y: auto; white-space: pre-wrap; }
+  details.diag summary { cursor: pointer; color: var(--muted); font-size: 0.86rem; }
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 2rem 1rem; }
+  .field { margin-bottom: 0.7rem; }
+  .field label { display: block; font-size: 0.78rem; font-weight: 700; margin-bottom: 0.25rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .field input, .field select { width: 100%; }
+  .formgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="bar">
+    <div class="logo">Log<em>Platform</em></div>
+    <nav class="tabs">
+      <button data-view="overview" class="active" onclick="go('overview')">Overview</button>
+      <button data-view="anomalies" onclick="go('anomalies')">Anomalies</button>
+      <button data-view="incidents" onclick="go('incidents')">Incidents</button>
+      <button data-view="ingest" onclick="go('ingest')">Ingest</button>
+    </nav>
+    <div class="spacer"></div>
+    <button class="iconbtn" onclick="toggleTheme()" title="Toggle dark mode">◐</button>
+    <span class="pill"><span class="dot" id="dot"></span><span id="healthTxt">…</span></span>
+    <label style="font-size:0.8rem;color:var(--muted)"><input type="checkbox" id="auto" checked> live</label>
+  </div>
+</header>
+
+<main>
+  <!-- OVERVIEW -->
+  <section id="view-overview" class="view active">
+    <div class="hero">
+      <div>
+        <h1 class="display">Anomaly console.</h1>
+        <p>Every ingested log is scored by three deterministic rules — spikes, slow requests, statistical outliers — then grouped into incidents.</p>
+      </div>
+      <div><button class="btn" onclick="go('ingest')">Ingest logs →</button></div>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="v" id="stObs">–</div><div class="l">Buffered observations</div></div>
+      <div class="stat" id="stAnomCard"><div class="v" id="stAnom">–</div><div class="l">Active anomalies</div></div>
+      <div class="stat"><div class="v" id="stInc">–</div><div class="l">Incidents</div></div>
+      <div class="stat"><div class="v" id="stBase" style="font-size:1.1rem">–</div><div class="l">Z-score baseline</div></div>
+    </div>
+    <div class="card">
+      <h2>Latest anomalies</h2>
+      <p class="sub">Top 5 right now — full list under Anomalies.</p>
+      <div id="recentAnoms"></div>
+    </div>
+  </section>
+
+  <!-- ANOMALIES -->
+  <section id="view-anomalies" class="view">
+    <div class="card">
+      <h2>Detected anomalies</h2>
+      <p class="sub">Refreshed live. Each row carries its evidence metrics.</p>
+      <div class="toolbar">
+        <button class="btn ghost" onclick="refreshAll()">↻ Refresh</button>
+        <select id="typeFilter" onchange="renderAnoms()">
+          <option value="">All types</option>
+          <option value="error_spike">error_spike</option>
+          <option value="high_latency">high_latency</option>
+          <option value="latency_zscore">latency_zscore</option>
+        </select>
+        <span style="color:var(--muted);font-size:0.85rem" id="anomMeta"></span>
+      </div>
+      <div id="anomsWrap"></div>
+    </div>
+  </section>
+
+  <!-- INCIDENTS -->
+  <section id="view-incidents" class="view">
+    <div class="card">
+      <h2>Incident reports</h2>
+      <p class="sub">Snapshotting groups current anomalies into one human-readable report.</p>
+      <div class="toolbar">
+        <button class="btn" onclick="snapshot()">Snapshot into incident</button>
+        <button class="btn ghost" onclick="refreshAll()">↻ Refresh</button>
+      </div>
+      <div id="incsWrap"></div>
+    </div>
+  </section>
+
+  <!-- INGEST -->
+  <section id="view-ingest" class="view">
+    <div class="grid">
+      <div class="card">
+        <h2>Ingest one log record</h2>
+        <p class="sub">POST /logs — returns 201 and buffers an observation.</p>
+        <div class="formgrid">
+          <div class="field"><label>Service</label><input id="fSvc" type="text" value="demo-app"></div>
+          <div class="field"><label>Level</label><select id="fLvl"><option>INFO</option><option>WARNING</option><option selected>ERROR</option></select></div>
+          <div class="field"><label>Method</label><input id="fMethod" type="text" value="POST"></div>
+          <div class="field"><label>Path</label><input id="fPath" type="text" value="/api/payment"></div>
+          <div class="field"><label>Status code</label><input id="fSc" type="text" value="500"></div>
+          <div class="field"><label>Latency ms</label><input id="fLat" type="text" value="8000"></div>
+        </div>
+        <div class="field"><label>Message / event</label><input id="fMsg" type="text" value="database timeout"></div>
+        <button class="btn" onclick="ingest()">Ingest →</button>
+      </div>
+      <div class="card">
+        <h2>Traffic generators</h2>
+        <p class="sub">One click reproduces each detection rule.</p>
+        <div class="toolbar"><button class="btn danger" onclick="gen('spike')">Flood 6 errors → error_spike</button></div>
+        <div class="toolbar"><button class="btn" onclick="gen('slow')">1 slow request → high_latency</button></div>
+        <div class="toolbar"><button class="btn ghost" onclick="gen('healthy')">20 healthy records → quiet</button></div>
+        <h2 style="margin-top:1rem">Activity</h2>
+        <div class="console" id="console">ready.</div>
+      </div>
+    </div>
+  </section>
+
+  <details class="diag">
+    <summary>Threshold reference (constructor defaults)</summary>
+    <div class="card" style="margin-top:0.6rem">
+      <table><thead><tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr></thead><tbody>
+      <tr><td>buffer_size</td><td>1000</td><td>observations retained</td></tr>
+      <tr><td>error_spike_window</td><td>50</td><td>recent obs examined</td></tr>
+      <tr><td>error_spike_threshold</td><td>5</td><td>5xx count to fire</td></tr>
+      <tr><td>latency_threshold_ms</td><td>2000</td><td>slow-request line</td></tr>
+      <tr><td>zscore_threshold</td><td>3.0</td><td>outlier line</td></tr>
+      <tr><td>min_baseline_size</td><td>30</td><td>warm-up count</td></tr>
+      </tbody></table>
+    </div>
+  </details>
+</main>
+
+<footer>Log Platform console · detection is rule-based and deterministic · <a href="/docs" style="color:var(--muted)">API docs</a></footer>
+<div id="toasts"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let cache = { anomalies: [], observation_count: 0, has_sufficient_baseline: false, thresholds: {} };
+let incidentsCache = [];
+
+function toast(msg, err=false) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (err ? ' err' : '');
+  t.textContent = msg;
+  $('toasts').appendChild(t);
+  setTimeout(() => t.remove(), 3600);
+}
+function log(m) {
+  const c = $('console');
+  c.textContent += '\n' + new Date().toLocaleTimeString() + '  ' + m;
+  c.scrollTop = c.scrollHeight;
+}
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  return { http: r.status, body: await r.json().catch(() => ({})) };
+}
+function toggleTheme() {
+  const d = document.documentElement;
+  d.dataset.theme = d.dataset.theme === 'dark' ? '' : 'dark';
+}
+function go(view) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  $('view-' + view).classList.add('active');
+  document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function sevBadge(s) {
+  const cls = s === 'high' ? 'b-red' : s === 'medium' ? 'b-amber' : 'b-green';
+  return `<span class="badge ${cls}">${s}</span>`;
+}
+
+async function refreshAll() {
+  try {
+    const h = await api('/health');
+    const up = h.http === 200;
+    $('dot').className = 'dot' + (up ? ' up' : ' bad');
+    $('healthTxt').textContent = up ? `Operational · v${h.body.version}` : 'Unreachable';
+    if (!up) return;
+    const a = await api('/anomalies');
+    cache = a.body;
+    const inc = await api('/incidents');
+    renderStats(inc.body);
+    renderAnoms();
+    renderRecent();
+    renderIncs(inc.body);
+  } catch { $('healthTxt').textContent = 'Unreachable'; }
+}
+function renderStats(incBody) {
+  $('stObs').textContent = cache.observation_count;
+  $('stAnom').textContent = cache.anomalies.length;
+  $('stAnomCard').className = 'stat' + (cache.anomalies.length ? ' alert' : '');
+  $('stInc').textContent = (incBody && incBody.count) || incidentsCache.length || 0;
+  $('stBase').textContent = cache.has_sufficient_baseline ? 'active' : 'warming up';
+}
+function renderRecent() {
+  $('recentAnoms').innerHTML = cache.anomalies.length
+    ? `<table><thead><tr><th>Type</th><th>Severity</th><th>Description</th></tr></thead><tbody>` +
+      cache.anomalies.slice(0, 5).map(x =>
+        `<tr><td><code>${x.anomaly_type}</code></td><td>${sevBadge(x.severity)}</td><td>${x.description}</td></tr>`).join('') + `</tbody></table>`
+    : `<div class="empty">No anomalies — traffic is healthy.</div>`;
+}
+function renderAnoms() {
+  const f = $('typeFilter').value;
+  const list = cache.anomalies.filter(x => !f || x.anomaly_type === f);
+  $('anomMeta').textContent = `${list.length} shown · ${cache.observation_count} buffered`;
+  $('anomsWrap').innerHTML = list.length
+    ? `<table><thead><tr><th>Type</th><th>Severity</th><th>Description</th><th>Detected</th></tr></thead><tbody>` +
+      list.map(x => `<tr><td><code>${x.anomaly_type}</code></td><td>${sevBadge(x.severity)}</td><td>${x.description}<br><small style="color:var(--muted)">${Object.entries(x.metrics).map(([k, v]) => `${k}=${v}`).join(' · ')}</small></td><td style="white-space:nowrap">${x.detected_at.replace('T', ' ').slice(0, 19)}Z</td></tr>`).join('') + `</tbody></table>`
+    : `<div class="empty">No anomalies${f ? ` of type <code>${f}</code>` : ''} — healthy traffic.</div>`;
+}
+function renderIncs(body) {
+  incidentsCache = (body && body.incidents) || [];
+  $('incsWrap').innerHTML = incidentsCache.length
+    ? incidentsCache.map(i => `<div class="incident ${i.severity === 'high' ? 'open' : ''}" id="inc-${i.id}">
+        <h3>#${i.id} ${i.title} ${sevBadge(i.severity)}</h3>
+        <div class="sum">${i.summary}</div>
+        <div class="toolbar"><span style="font-size:0.82rem;color:var(--muted)">${i.anomaly_count} anomal${i.anomaly_count === 1 ? 'y' : 'ies'} · ${i.created_at.replace('T', ' ').slice(0, 19)}Z</span>
+        <button class="btn ghost" onclick="document.getElementById('inc-${i.id}').classList.toggle('show')">Evidence</button></div>
+        <pre>${JSON.stringify(i.anomalies, null, 2)}</pre>
+      </div>`).join('')
+    : `<div class="empty">No incidents yet — detect anomalies, then snapshot them into a report.</div>`;
+}
+async function ingest() {
+  const { http } = await api('/logs', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ service: $('fSvc').value, level: $('fLvl').value, message: $('fMsg').value,
+      method: $('fMethod').value, path: $('fPath').value,
+      status_code: +$('fSc').value || 200, latency_ms: +$('fLat').value || 0 }) });
+  if (http === 201) { toast('Log ingested (201)'); log('ingested 1 record'); }
+  else toast('Ingest rejected (HTTP ' + http + ')', true);
+  refreshAll();
+}
+async function ship(rec) {
+  await api('/logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rec) });
+}
+async function gen(kind) {
+  if (kind === 'spike') {
+    for (let i = 0; i < 6; i++) await ship({ service: 'demo-app', level: 'ERROR', message: 'database timeout', method: 'POST', path: '/api/payment', status_code: 500, latency_ms: 8000 });
+    toast('6 errors shipped — expect error_spike'); log('flooded 6 error records');
+  } else if (kind === 'slow') {
+    await ship({ service: 'demo-app', level: 'WARNING', message: 'slow upstream', method: 'GET', path: '/api/orders', status_code: 200, latency_ms: 4500 });
+    toast('Slow record shipped — expect high_latency'); log('shipped 1 slow record');
+  } else {
+    for (let i = 0; i < 20; i++) await ship({ service: 'demo-app', level: 'INFO', message: 'ok', method: 'GET', path: '/api/health', status_code: 200, latency_ms: 40 + (i % 5) });
+    toast('20 healthy records shipped'); log('shipped 20 healthy records');
+  }
+  refreshAll();
+}
+async function snapshot() {
+  const { body } = await api('/incidents');
+  if (body.count > incidentsCache.length) { toast(`Incident #${body.incidents[body.incidents.length - 1].id} created`); log('incident snapshot created'); }
+  else toast('No anomalies to snapshot', true);
+  refreshAll();
+}
+
+refreshAll();
+setInterval(() => { if ($('auto').checked) refreshAll(); }, 3000);
+</script>
+</body>
+</html>

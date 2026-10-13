@@ -126,34 +126,72 @@ docker-compose up -d
 *   **Container Restarting:** You can check individual service logs using standard Docker commands: `docker-compose logs alloy` or `docker-compose logs loki` to identify specific errors.
 *   **Security Note:** Grafana is configured with anonymous admin access for convenience during local development. Do not expose this configuration to the public internet or use it in production environments.
 
-## Phase 4: Anomaly Detection
+## Two apps in one repo (sibling folders, not nested)
 
-The application now includes an in-process anomaly detector that continuously
-analyses the stream of incoming HTTP requests and exposes its findings via a
-dedicated API endpoint.
+| Folder | Service | Port | Role | Key endpoints |
+|---|---|---|---|---|
+| `app/` | demo-app (`ai-log-app`) | 8000 | Demo business app = log producer | `GET /api/health`, `POST /api/orders`, `POST /api/payment`, `GET /api/users`, `POST /api/failure/{kind}`, `POST /api/failure/stop` |
+| `log_platform/` | log-platform | 8001 | AI log platform = log consumer | `GET /health`, `POST /logs`, `GET /anomalies`, `GET /incidents`, `GET /incidents/{id}` |
 
-### How It Works
+Run locally (two terminals):
 
-All HTTP observations (recorded by the existing middleware) are appended to a
-**bounded in-memory deque** (`AnomalyDetector._buffer`, default capacity
-**1 000** entries). When the buffer is full the oldest entry is evicted
-automatically ΓÇö memory usage is therefore capped regardless of traffic volume.
+```bash
+# terminal 1 - demo app
+uvicorn app.main:app --port 8000
+# terminal 2 - log platform
+uvicorn log_platform.main:app --port 8001
+```
 
-Each call to `GET /api/anomalies` runs three independent, fully deterministic
+Or the full stack (both apps + Loki + Alloy + Grafana):
+
+```bash
+docker-compose up -d --build
+# demo app:      http://localhost:8000
+# log platform:  http://localhost:8001
+# grafana:       http://localhost:3000
+# loki:          http://localhost:3100
+```
+
+Ship a demo failure to the platform and watch detection happen:
+
+```bash
+curl -X POST http://localhost:8000/api/failure/database
+for i in 1 2 3 4 5 6; do
+  curl -s -X POST http://localhost:8000/api/payment -H "Content-Type: application/json" -d '{"order_id":1,"amount":10}' > /dev/null
+  curl -s -X POST http://localhost:8001/logs -H "Content-Type: application/json" -d '{"service":"demo-app","level":"ERROR","message":"database timeout","method":"POST","path":"/api/payment","status_code":500,"latency_ms":8000}' > /dev/null
+done
+curl http://localhost:8001/anomalies | python3 -m json.tool
+curl http://localhost:8001/incidents | python3 -m json.tool
+curl -X POST http://localhost:8000/api/failure/stop
+```
+
+## Phase 4: Anomaly Detection + Incident Summarization (log-platform)
+
+Detection lives in the `log_platform/` service, fed by `POST /logs`
+records buffered in a bounded in-memory deque (`AnomalyDetector._buffer`,
+default capacity 1000 entries). When full, the oldest entry is evicted,
+so memory use is capped regardless of traffic volume.
+
+Each call to `GET /anomalies` runs three independent, fully deterministic
 detection rules:
 
 | Rule | Trigger | Severity |
 |---|---|---|
-| `error_spike` | ΓëÑ N HTTP 5xx responses in the last W observations | `medium` (< 50 % error rate) / `high` (ΓëÑ 50 %) |
-| `high_latency` | Any single request exceeds L ms | `medium` (< 2├ù threshold) / `high` (ΓëÑ 2├ù threshold) |
-| `latency_zscore` | A request's latency is > Z standard deviations above the buffer mean (only when baseline ΓëÑ M observations and std > 0) | `medium` (z < 1.5├ù threshold) / `high` (z ΓëÑ 1.5├ù threshold) |
+| `error_spike` | >= N HTTP 5xx in the last W observations | `medium` (< 50% error rate) / `high` (>= 50%) |
+| `high_latency` | Any single request exceeds L ms | `medium` (< 2x threshold) / `high` (>= 2x threshold) |
+| `latency_zscore` | Latency > Z std-devs above the held-out baseline mean (needs >= M baseline obs, std > 0) | `medium` (z < 1.5x threshold) / `high` (z >= 1.5x threshold) |
 
-No external APIs, no ML libraries, and no randomness are used.
+No external APIs, no ML libraries, no randomness.
 
-### Configurable Thresholds
+`GET /incidents` groups the currently detected anomalies into one incident
+report (`log_platform/summarizer.py`, deterministic template, no LLM calls
+in v1): id, title, worst severity, human-readable summary, anomaly types,
+and the raw anomalies. `GET /incidents/{id}` fetches one report (404 if
+unknown).
 
-All thresholds are constructor parameters of `AnomalyDetector`
-(`app/anomaly_detector.py`). The module-level singleton uses these defaults:
+### Configurable thresholds
+
+Constructor parameters of `AnomalyDetector` (`log_platform/detector.py`):
 
 | Parameter | Default | Description |
 |---|---|---|
@@ -161,77 +199,62 @@ All thresholds are constructor parameters of `AnomalyDetector`
 | `error_spike_window` | `50` | Recent observations examined for 5xx spikes |
 | `error_spike_threshold` | `5` | Minimum 5xx count to trigger a spike alert |
 | `latency_threshold_ms` | `2000` | Per-request latency (ms) above which a slow alert fires |
-| `zscore_threshold` | `3.0` | Z-score above which a latency observation is flagged as an outlier |
-| `min_baseline_size` | `30` | Minimum buffer size before z-score analysis is activated |
+| `zscore_threshold` | `3.0` | Z-score above which latency is flagged as an outlier |
+| `min_baseline_size` | `30` | Minimum baseline size before z-score activates |
 
-### Endpoint: `GET /api/anomalies`
+### Endpoints (port 8001)
 
-Returns a JSON object describing currently detected anomalies and supporting
-metadata.
-
-**Example response (anomaly detected):**
-```json
-{
-  "anomalies": [
-    {
-      "anomaly_type": "error_spike",
-      "severity": "high",
-      "description": "8 HTTP 5xx responses detected in the last 50 observations (16.0% error rate).",
-      "detected_at": "2026-10-11T16:05:00.123Z",
-      "metrics": {
-        "error_count": 8,
-        "window_size": 50,
-        "error_rate": 0.16,
-        "threshold": 5,
-        "window_start": "2026-10-11T16:04:55.000Z",
-        "window_end": "2026-10-11T16:05:00.000Z"
-      }
-    }
-  ],
-  "observation_count": 50,
-  "window_size": 50,
-  "has_sufficient_baseline": true,
-  "thresholds": {
-    "error_spike_threshold": 5,
-    "error_spike_window": 50,
-    "latency_threshold_ms": 2000.0,
-    "zscore_threshold": 3.0,
-    "min_baseline_size": 30
-  }
-}
-```
-
-**Example response (healthy traffic):**
-```json
-{
-  "anomalies": [],
-  "observation_count": 12,
-  "window_size": 50,
-  "has_sufficient_baseline": false,
-  "thresholds": { "..." : "..." }
-}
-```
-
-**Curl example:**
 ```bash
-curl http://localhost:8000/api/anomalies | python3 -m json.tool
+curl -X POST http://localhost:8001/logs -H "Content-Type: application/json" \
+  -d '{"service":"demo-app","level":"ERROR","message":"db timeout","status_code":500}'
+curl http://localhost:8001/anomalies | python3 -m json.tool
+curl http://localhost:8001/incidents | python3 -m json.tool
+curl http://localhost:8001/incidents/1 | python3 -m json.tool
 ```
 
-### Limitations of In-Memory Observations
+### Limitations of in-memory state
 
-* **Restarts reset history** ΓÇö the buffer is process-local. A container
-  restart or rolling deployment discards all observations. Alerts will not
-  fire until the buffer is repopulated.
-* **Single-process only** ΓÇö the in-memory buffer is not shared across
-  multiple application replicas. Each replica detects anomalies
-  independently.
-* **No persistence** ΓÇö observations are not written to Loki or any other
-  store. Use the Loki/Grafana stack (Phase 3) for durable log querying and
-  alerting across restarts.
-* **Z-score warm-up** ΓÇö z-score detection requires at least
-  `min_baseline_size` (default 30) observations before it activates. On
-  a fresh start, only the `error_spike` and `high_latency` rules fire.
-* **Single-spike vs. sustained spike** ΓÇö one isolated HTTP 500 will not
-  trigger an `error_spike` alert. The count must reach
-  `error_spike_threshold` (default 5) within the most recent
-  `error_spike_window` (default 50) observations.
+* **Restarts reset history** - the buffer and incident list are process-local.
+* **Single-process only** - each replica detects independently.
+* **No persistence** - use the Loki/Grafana stack for durable log querying across restarts.
+* **Z-score warm-up** - needs `min_baseline_size` (default 30) baseline
+  observations; on a fresh start only `error_spike` and `high_latency` fire.
+
+## Grafana dashboard
+
+A provisioned dashboard `AI Log Anomaly DevOps` loads automatically at
+`http://localhost:3000` (see `monitoring/grafana/provisioning/dashboards/`):
+
+* Log volume by service (`api`, `log-platform`)
+* Demo-app error rate (`level="ERROR"`)
+* Incidents created (`incident_created` events from the platform)
+* Latest anomaly count (`anomalies_queried` events)
+
+Raw exploration still works via Explore + Loki datasource with
+`{service="api"}` or `{service="log-platform"}`.
+
+## Kubernetes
+
+```bash
+docker build -t ai-log-anomaly-devops:latest .
+docker build -f Dockerfile.platform -t ai-log-platform:latest .
+kubectl apply -f k8s/
+kubectl get pods,svc
+kubectl port-forward svc/demo-app 8000:8000 &
+kubectl port-forward svc/log-platform 8001:8001 &
+```
+
+`k8s/configmap.yaml` holds shared config (`LOG_LEVEL`, consumed by both
+services via `envFrom`).
+
+## End-to-end test (NFR-6)
+
+`log_platform/tests/test_e2e.py` drives both apps: start demo failure ->
+failing payments -> ship each failure via `POST /logs` -> assert
+`error_spike` in `GET /anomalies` -> assert incident in `GET /incidents`
+-> stop failure -> demo healthy again.
+
+```bash
+pytest -v                          # all suites: app + log-platform
+pytest log_platform/tests/test_e2e.py -v   # E2E only
+```

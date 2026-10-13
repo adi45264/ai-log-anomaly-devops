@@ -20,7 +20,7 @@ deterministic: no external APIs, no randomness, no wall-clock sleeps.
 
 Usage::
 
-    from app.anomaly_detector import AnomalyDetector, Observation
+    from log_platform.detector import AnomalyDetector, Observation
 
     detector = AnomalyDetector()
     detector.record(Observation(

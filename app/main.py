@@ -8,20 +8,22 @@ Endpoints:
     GET  /api/users           -> 200 list users
     POST /api/failure/{kind}  -> 500 simulate a failure (database|payment|latency)
     POST /api/failure/stop    -> 200 stop failure simulation
-    GET  /api/anomalies       -> 200 detected anomalies from in-memory observations
 
 Every request emits structured JSON logs to stdout (event, status_code,
 latency_ms, request_id) so downstream log aggregation and the AI analyzer
 can consume machine-parseable data.
 """
+import json
 import logging
+import os
 import random
 import time
+import urllib.request
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
-from app.anomaly_detector import Observation, detector
 from app.logger import (
     get_logger,
     monotonic_ms,
@@ -30,7 +32,7 @@ from app.logger import (
     setup_logging,
 )
 
-setup_logging()
+setup_logging(os.getenv("LOG_LEVEL", "INFO"))
 logger = get_logger("app")
 
 app = FastAPI(title="ai-log-app", version="1.0.0")
@@ -44,6 +46,28 @@ users = [
 
 # Failure simulation state (set by /api/failure/{kind})
 failure_state: dict = {"active": False, "kind": None, "started_at": None}
+
+
+def _ship_to_platform(record: dict) -> None:
+    """Best-effort forward of notable shop events to the log platform.
+
+    The shop must keep working standalone, so every error is swallowed.
+    Set LOG_PLATFORM_URL="" to disable. Defaults to the local platform.
+    """
+    base = os.getenv("LOG_PLATFORM_URL", "http://localhost:8001")
+    if not base:
+        return
+    try:
+        req = urllib.request.Request(
+            base.rstrip("/") + "/logs",
+            data=json.dumps(record).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=0.5):
+            pass
+    except Exception:
+        pass
 
 
 @app.middleware("http")
@@ -72,40 +96,13 @@ async def logging_middleware(request: Request, call_next):
                 "latency_ms": latency_ms,
             },
         )
-        # Record observation for anomaly detection (no PII ΓÇö path only, no body).
-        detector.record(
-            Observation(
-                timestamp=time.time(),
-                method=request.method,
-                path=request.url.path,
-                status_code=status_code,
-                latency_ms=float(latency_ms),
-            )
-        )
         request_id_var.reset(token)
 
 
-@app.get("/api/anomalies")
-def get_anomalies():
-    """Return detected anomalies from the in-memory observation buffer.
-
-    The response includes:
-    * ``anomalies`` ΓÇô list of detected anomaly objects (may be empty for healthy traffic).
-    * ``observation_count`` ΓÇô total observations currently buffered.
-    * ``window_size`` ΓÇô the error-spike window used for detection.
-    * ``has_sufficient_baseline`` ΓÇô whether Z-score detection is active.
-    * ``thresholds`` ΓÇô all configured detection thresholds.
-    """
-    result = detector.detect()
-    logger.info(
-        "anomalies queried",
-        extra={
-            "event": "anomalies_queried",
-            "anomaly_count": len(result["anomalies"]),
-            "observation_count": result["observation_count"],
-        },
-    )
-    return result
+@app.get("/", include_in_schema=False)
+def index():
+    """Demo shop UI for placing orders and simulating failures."""
+    return FileResponse(Path(__file__).parent / "static" / "index.html")
 
 
 @app.get("/api/health")
@@ -152,10 +149,79 @@ def process_payment(payment: dict):
                 "error_type": "timeout",
             },
         )
+        _ship_to_platform(
+            {
+                "service": "demo-app",
+                "level": "ERROR",
+                "message": "database timeout while processing payment",
+                "method": "POST",
+                "path": "/api/payment",
+                "status_code": 500,
+                "latency_ms": latency_ms,
+            }
+        )
         return JSONResponse(
             status_code=500,
             content={"detail": "database timeout while processing payment"},
         )
+
+    if failure_state["active"] and failure_state["kind"] == "payment":
+        latency_ms = random.randint(80, 250)
+        time.sleep(latency_ms / 1000)
+        logger.warning(
+            "payment declined",
+            extra={
+                "event": "payment_declined",
+                "order_id": order_id,
+                "status_code": 402,
+                "latency_ms": latency_ms,
+                "error_type": "card_declined",
+            },
+        )
+        _ship_to_platform(
+            {
+                "service": "demo-app",
+                "level": "WARNING",
+                "message": "card declined by issuer (simulated payment outage)",
+                "method": "POST",
+                "path": "/api/payment",
+                "status_code": 402,
+                "latency_ms": latency_ms,
+            }
+        )
+        return JSONResponse(
+            status_code=402,
+            content={"detail": "card declined by issuer (simulated payment outage)"},
+        )
+
+    if failure_state["active"] and failure_state["kind"] == "latency":
+        latency_ms = random.randint(3000, 5000)
+        time.sleep(latency_ms / 1000)
+        logger.warning(
+            "payment slow",
+            extra={
+                "event": "payment_slow",
+                "order_id": order_id,
+                "status_code": 200,
+                "latency_ms": latency_ms,
+            },
+        )
+        for o in orders:
+            if o.get("order_id") == order_id:
+                o["status"] = "paid"
+        if failure_state["active"] and failure_state["kind"] == "latency":
+            _ship_to_platform(
+                {
+                    "service": "demo-app",
+                    "level": "WARNING",
+                    "message": "slow payment approved (simulated latency spike)",
+                    "method": "POST",
+                    "path": "/api/payment",
+                    "status_code": 200,
+                    "latency_ms": latency_ms,
+                }
+            )
+        return {"status": "approved", "order_id": order_id, "amount": amount, "latency_ms": latency_ms}
 
     latency_ms = random.randint(80, 250)
     time.sleep(latency_ms / 1000)
@@ -169,7 +235,23 @@ def process_payment(payment: dict):
             "latency_ms": latency_ms,
         },
     )
+    for o in orders:
+        if o.get("order_id") == order_id:
+            o["status"] = "paid"
     return {"status": "approved", "order_id": order_id, "amount": amount, "latency_ms": latency_ms}
+
+
+@app.delete("/api/orders/{order_id}")
+def cancel_order(order_id: int):
+    """Cancel an unpaid order."""
+    for i, o in enumerate(orders):
+        if o.get("order_id") == order_id:
+            if o.get("status") == "paid":
+                raise HTTPException(status_code=409, detail="paid orders cannot be cancelled")
+            del orders[i]
+            logger.info("order cancelled", extra={"event": "order_cancelled", "order_id": order_id})
+            return {"status": "cancelled", "order_id": order_id}
+    raise HTTPException(status_code=404, detail=f"unknown order: {order_id}")
 
 
 @app.get("/api/users")
@@ -186,6 +268,17 @@ def stop_failure():
         f"failure simulation stopped: {kind}",
         extra={"event": "failure_stopped", "failure_kind": kind},
     )
+    _ship_to_platform(
+        {
+            "service": "demo-app",
+            "level": "WARNING",
+            "message": f"failure simulation stopped: {kind}",
+            "method": "POST",
+            "path": "/api/failure/stop",
+            "status_code": 200,
+            "latency_ms": 0,
+        }
+    )
     return {"status": "failure simulation stopped", "previous_kind": kind}
 
 
@@ -199,5 +292,16 @@ def start_failure(kind: str):
     logger.warning(
         f"failure simulation started: {kind}",
         extra={"event": "failure_started", "failure_kind": kind},
+    )
+    _ship_to_platform(
+        {
+            "service": "demo-app",
+            "level": "WARNING",
+            "message": f"failure simulation started: {kind}",
+            "method": "POST",
+            "path": f"/api/failure/{kind}",
+            "status_code": 200,
+            "latency_ms": 0,
+        }
     )
     return {"status": "failure simulation started", "kind": kind}

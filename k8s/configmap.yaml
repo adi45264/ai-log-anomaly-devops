@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: log-stack-config
+  labels:
+    app: ai-log-anomaly-devops
+data:
+  LOG_LEVEL: "INFO"

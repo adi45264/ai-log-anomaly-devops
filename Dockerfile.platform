@@ -1,0 +1,28 @@
+FROM python:3.11-slim
+
+# Create a non-root user and group
+RUN addgroup --system appgroup && adduser --system --group appuser
+
+WORKDIR /usr/src/app
+
+# Copy requirements and install dependencies
+COPY log_platform/requirements.txt ./log_platform/
+RUN pip install --no-cache-dir -r log_platform/requirements.txt
+
+# Copy application files
+COPY log_platform/ ./log_platform/
+COPY pytest.ini ./
+
+# Change ownership of the directory
+RUN chown -R appuser:appgroup /usr/src/app
+
+# Switch to the non-root user
+USER appuser
+
+# Ensure logs are emitted immediately to stdout/stderr
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 8001
+
+# Start the log-platform API
+CMD ["uvicorn", "log_platform.main:app", "--host", "0.0.0.0", "--port", "8001"]

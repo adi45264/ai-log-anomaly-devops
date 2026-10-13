@@ -1,4 +1,4 @@
-﻿"""Tests for Phase 4: Anomaly Detection.
+﻿"""Tests for the log-platform anomaly detector.
 
 All tests are deterministic:
 * Observations are injected with explicit timestamps and latency values.
@@ -10,7 +10,7 @@ All tests are deterministic:
 Test groups
 -----------
 1. Unit tests for AnomalyDetector (no HTTP stack needed)
-   - Normal traffic Γƒ╣ no false positives
+   - Normal traffic => no false positives
    - Error spike detection
    - High-latency detection
    - Z-score detection with valid baseline
@@ -19,14 +19,13 @@ Test groups
    - detect() response shape
 
 2. Integration tests via TestClient
-   - GET /api/anomalies response shape
-   - Existing endpoints are still functional
+   - GET /anomalies response shape (log-platform service)
 """
 from __future__ import annotations
 
 import pytest
 
-from app.anomaly_detector import AnomalyDetector, Observation, detector
+from log_platform.detector import AnomalyDetector, Observation, detector
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -460,43 +459,42 @@ class TestDetectResponseShape:
 
 
 class TestAnomaliesEndpoint:
-    """GET /api/anomalies via the real FastAPI app."""
+    """GET /anomalies via the log-platform FastAPI app."""
 
     def test_anomalies_returns_200(self, client):
-        r = client.get("/api/anomalies")
+        r = client.get("/anomalies")
         assert r.status_code == 200
 
     def test_anomalies_response_shape(self, client):
-        r = client.get("/api/anomalies")
+        r = client.get("/anomalies")
         body = r.json()
         for key in ("anomalies", "observation_count", "window_size", "has_sufficient_baseline", "thresholds"):
             assert key in body, f"Missing key: {key}"
 
     def test_anomalies_is_list(self, client):
-        r = client.get("/api/anomalies")
+        r = client.get("/anomalies")
         assert isinstance(r.json()["anomalies"], list)
 
     def test_anomalies_empty_on_clean_traffic(self, client):
-        """Normal 200 responses should not produce anomalies."""
+        """Normal ingested 200 records should not produce anomalies."""
         for _ in range(10):
-            client.get("/api/health")
-        r = client.get("/api/anomalies")
+            client.post("/logs", json={"service": "demo-app", "message": "ok"})
+        r = client.get("/anomalies")
         body = r.json()
         assert body["anomalies"] == [], f"Unexpected anomalies: {body['anomalies']}"
 
     def test_observation_count_increments(self, client):
-        before = client.get("/api/anomalies").json()["observation_count"]
-        client.get("/api/health")
-        after = client.get("/api/anomalies").json()["observation_count"]
-        # at least the /api/health call was recorded (the /api/anomalies calls are also recorded)
-        assert after > before
+        before = client.get("/anomalies").json()["observation_count"]
+        client.post("/logs", json={"service": "demo-app", "message": "ok"})
+        after = client.get("/anomalies").json()["observation_count"]
+        assert after == before + 1
 
     def test_error_spike_via_endpoint(self, client):
         """Injecting 5xx observations directly should cause an error_spike anomaly."""
         # Bypass HTTP and inject directly so the test is fast and deterministic.
         for i in range(10):
             detector.record(_obs(status_code=500, ts=_BASE_TS + i))
-        r = client.get("/api/anomalies")
+        r = client.get("/anomalies")
         body = r.json()
         spike_types = [a["anomaly_type"] for a in body["anomalies"]]
         assert "error_spike" in spike_types
@@ -504,54 +502,12 @@ class TestAnomaliesEndpoint:
     def test_high_latency_via_endpoint(self, client):
         """Injecting a slow observation should cause a high_latency anomaly."""
         detector.record(_obs(latency_ms=9999.0, ts=_BASE_TS))
-        r = client.get("/api/anomalies")
+        r = client.get("/anomalies")
         body = r.json()
         lat_types = [a["anomaly_type"] for a in body["anomalies"]]
         assert "high_latency" in lat_types
 
-
-class TestExistingEndpointsUnchanged:
-    """All pre-Phase-4 endpoints must continue to function as before."""
-
-    def test_health_still_200(self, client):
-        r = client.get("/api/health")
+    def test_request_id_header_present(self, client):
+        r = client.get("/health")
         assert r.status_code == 200
-        assert r.json()["status"] == "healthy"
-
-    def test_create_order_still_201(self, client):
-        r = client.post("/api/orders", json={"item": "widget", "amount": 5.0})
-        assert r.status_code == 201
-
-    def test_list_orders_still_200(self, client):
-        r = client.get("/api/orders")
-        assert r.status_code == 200
-
-    def test_list_users_still_200(self, client):
-        r = client.get("/api/users")
-        assert r.status_code == 200
-
-    def test_failure_simulation_start_stop(self, client):
-        r = client.post("/api/failure/database")
-        assert r.status_code == 200
-        assert r.json()["kind"] == "database"
-        r = client.post("/api/failure/stop")
-        assert r.status_code == 200
-
-    def test_unknown_failure_kind_still_404(self, client):
-        r = client.post("/api/failure/earthquake")
-        assert r.status_code == 404
-
-    def test_payment_still_approved_without_failure(self, client):
-        r = client.post("/api/payment", json={"order_id": 1, "amount": 42.0})
-        assert r.status_code == 200
-        assert r.json()["status"] == "approved"
-
-    def test_payment_still_500_with_database_failure(self, client):
-        client.post("/api/failure/database")
-        r = client.post("/api/payment", json={"order_id": 1, "amount": 10.0})
-        assert r.status_code == 500
-        assert "database timeout" in r.json()["detail"]
-
-    def test_request_id_header_still_present(self, client):
-        r = client.get("/api/health")
         assert "x-request-id" in r.headers

@@ -5,8 +5,23 @@ services:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
+      - LOG_PLATFORM_URL=http://log-platform:8001
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  log-platform:
+    build:
+      context: .
+      dockerfile: Dockerfile.platform
+    ports:
+      - "8001:8001"
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -33,6 +48,7 @@ services:
     depends_on:
       - loki
       - api
+      - log-platform
 
   grafana:
     image: grafana/grafana:10.2.3

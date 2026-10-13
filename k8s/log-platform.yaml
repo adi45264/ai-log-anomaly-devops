@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: log-platform
+  labels:
+    app: log-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: log-platform
+  template:
+    metadata:
+      labels:
+        app: log-platform
+    spec:
+      containers:
+        - name: log-platform
+          image: ai-log-platform:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - configMapRef:
+                name: log-stack-config
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: log-platform
+  labels:
+    app: log-platform
+spec:
+  selector:
+    app: log-platform
+  ports:
+    - protocol: TCP
+      port: 8001
+      targetPort: 8001
+  type: ClusterIP
